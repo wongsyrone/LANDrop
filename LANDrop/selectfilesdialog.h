@@ -34,6 +34,8 @@
 
 #include <QDialog>
 #include <QFile>
+#include <QDir>
+#include <QDirIterator>
 #include <QStringListModel>
 
 #include "discoveryservice.h"
@@ -51,8 +53,10 @@ private:
     Ui::SelectFilesDialog *ui;
     DiscoveryService &discoveryService;
     QList<QSharedPointer<QFile>> files;
+    QList<QSharedPointer<QDir>> dirs;
     QStringListModel filesStringListModel;
     void addFile(const QString &filename);
+    bool isFileValid(const QString &filename);
     void updateFileStringListModel();
 private slots:
     void addButtonClicked();

@@ -32,6 +32,7 @@
 
 #pragma once
 
+#include <QDir>
 #include <QFile>
 
 #include "filetransfersession.h"
@@ -39,12 +40,13 @@
 class FileTransferSender : public FileTransferSession {
     Q_OBJECT
 public:
-    FileTransferSender(QObject *parent, QTcpSocket *socket, const QList<QSharedPointer<QFile>> &files);
+    FileTransferSender(QObject *parent, QTcpSocket *socket, const QList<QSharedPointer<QFile>> &files, const QList<QSharedPointer<QDir>> &dirs);
 private:
     enum {
         TRANSFER_QUANTA = 64000
     };
     QList<QSharedPointer<QFile>> files;
+    QList<QSharedPointer<QDir>> dirs;
 protected:
     void handshake1Finished();
     void processReceivedData(const QByteArray &data);

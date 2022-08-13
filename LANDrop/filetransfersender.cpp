@@ -39,17 +39,26 @@
 #include "filetransfersender.h"
 #include "settings.h"
 
-FileTransferSender::FileTransferSender(QObject *parent, QTcpSocket *socket, const QList<QSharedPointer<QFile>> &files) :
-    FileTransferSession(parent, socket), files(files)
+FileTransferSender::FileTransferSender(QObject *parent, QTcpSocket *socket, const QList<QSharedPointer<QFile>> &files ,const QList<QSharedPointer<QDir>> &dirs) :
+    FileTransferSession(parent, socket), files(files), dirs(dirs)
 {
     connect(socket, &QTcpSocket::bytesWritten, this, &FileTransferSender::socketBytesWritten);
 
     foreach (QSharedPointer<QFile> file, files) {
         QString filename = QFileInfo(*file).fileName();
+        QString type = "FILE";
         quint64 size = static_cast<quint64>(file->size());
         totalSize += size;
-        transferQ.append({filename, size});
+        transferQ.append({filename,type, size});
     }
+    foreach (QSharedPointer<QDir> dir, dirs) {
+        QString filename = dir->dirName();  // todo check if it is relative path
+        QString type = "DIR";
+        quint64 size = 0;
+        // just need to create dirs
+        transferQ.append({filename,type, size});
+    }
+    // TODO: handle dirs
 }
 
 void FileTransferSender::handshake1Finished()
@@ -58,6 +67,7 @@ void FileTransferSender::handshake1Finished()
     foreach (FileMetadata metadata, transferQ) {
         QJsonObject jsonFile;
         jsonFile.insert("filename", metadata.filename);
+        jsonFile.insert("type", metadata.type);
         jsonFile.insert("size", static_cast<qint64>(metadata.size));
         jsonFiles.append(jsonFile);
     }
@@ -101,11 +111,13 @@ void FileTransferSender::socketBytesWritten()
 
     while (!transferQ.empty()) {
         FileMetadata &curFile = transferQ.front();
-        if (curFile.size == 0) {
+        QString type = curFile.type;
+        if (QString::compare(type, "FILE", Qt::CaseInsensitive) == 0 && curFile.size == 0) {
+            // ignore zero sized file
             transferQ.pop_front();
             files.pop_front();
         } else {
-            emit printMessage(tr("Sending file %1...").arg(curFile.filename));
+            emit printMessage(tr("Sending %1 %2...").arg(curFile.type, curFile.filename));
             break;
         }
     }
@@ -116,11 +128,17 @@ void FileTransferSender::socketBytesWritten()
         QTimer::singleShot(5000, this, &FileTransferSession::ended);
         return;
     }
-    QSharedPointer<QFile> &curFile = files.front();
     FileMetadata &curMetadata = transferQ.front();
-    QByteArray data = curFile->read(TRANSFER_QUANTA);
-    encryptAndSend(data);
-    curMetadata.size -= data.size();
-    transferredSize += data.size();
+    QString type = curMetadata.type;
+    if (QString::compare(type, "FILE", Qt::CaseInsensitive) == 0) {
+        QSharedPointer<QFile> &curFile = files.front();
+        QByteArray data = curFile->read(TRANSFER_QUANTA);
+        encryptAndSend(data);
+        curMetadata.size -= data.size();
+        transferredSize += data.size();
+    } else if (QString::compare(type, "DIR", Qt::CaseInsensitive) == 0) {
+
+    }
+
     emit updateProgress(static_cast<double>(transferredSize) / totalSize);
 }

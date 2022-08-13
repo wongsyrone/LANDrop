@@ -9,6 +9,9 @@
 *.dll
 *.dylib
 
+debug/
+release/
+
 # Qt-es
 object_script.*.Release
 object_script.*.Debug
@@ -28,6 +31,8 @@ ui_*.h
 *.jsc
 Makefile*
 *build-*
+
+.qmake.stash
 
 # Qt unit tests
 target_wrapper.*

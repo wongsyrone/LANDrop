@@ -32,6 +32,7 @@
 
 #pragma once
 
+#include <QDir>
 #include <QFile>
 
 #include "filetransfersession.h"
@@ -45,6 +46,7 @@ protected:
     void processReceivedData(const QByteArray &data);
 private:
     QFile *writingFile;
+    QDir *writingDir;
     QString downloadPath;
     void createNextFile();
 };

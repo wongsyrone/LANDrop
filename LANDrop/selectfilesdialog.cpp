@@ -33,6 +33,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
+#include <QTreeView>
 #include <QMessageBox>
 #include <QMimeData>
 
@@ -44,7 +45,8 @@ SelectFilesDialog::SelectFilesDialog(QWidget *parent, DiscoveryService &discover
     QDialog(parent), ui(new Ui::SelectFilesDialog), discoveryService(discoveryService)
 {
     ui->setupUi(this);
-    setWindowFlag(Qt::WindowStaysOnTopHint);
+    // TODO: for debug
+    //setWindowFlag(Qt::WindowStaysOnTopHint);
     connect(ui->addButton, &QPushButton::clicked, this, &SelectFilesDialog::addButtonClicked);
     connect(ui->removeButton, &QPushButton::clicked, this, &SelectFilesDialog::removeButtonClicked);
     ui->filesListView->setModel(&filesStringListModel);
@@ -60,39 +62,124 @@ SelectFilesDialog::~SelectFilesDialog()
 
 void SelectFilesDialog::addFile(const QString &filename)
 {
-    foreach (QSharedPointer<QFile> file, files) {
-        if (file->fileName() == filename)
-            return;
-    }
-
-    QSharedPointer<QFile> fp = QSharedPointer<QFile>::create(filename);
-    if (!fp->open(QIODevice::ReadOnly)) {
+    QFileInfo newSelectedFileInfo(filename);
+    if (!newSelectedFileInfo.exists()) {
         QMessageBox::critical(this, QApplication::applicationName(),
                               tr("Unable to open file %1. Skipping.")
                               .arg(filename));
         return;
     }
+    if (newSelectedFileInfo.isSymLink()) {
+        auto symTarget = newSelectedFileInfo.symLinkTarget();
+        newSelectedFileInfo = QFileInfo(symTarget);
+        QMessageBox::warning(this, QApplication::applicationName(),
+                             tr("Selected file/dir is symlink, replaced with %1.")
+                             .arg(symTarget));
+    }
+    if (newSelectedFileInfo.isDir()) {
+        QDir parentDir(newSelectedFileInfo.absoluteDir());
+//        foreach (auto dir, dirs) {
+//            if (*dir == newSelectedFileInfo.absoluteDir())
+//                return;
+//        }
+
+        // selected current dir
+        QSharedPointer<QDir> dir = QSharedPointer<QDir>::create(parentDir.relativeFilePath(newSelectedFileInfo.absolutePath()));
+        if (!dir->exists()) {
+            QMessageBox::critical(this, QApplication::applicationName(),
+                                  tr("Unable to open dir %1. Skipping.")
+                                  .arg(filename));
+            return;
+        }
+        dirs.append(dir);
+
+        // All dirs to create
+        QDirIterator diDirs(newSelectedFileInfo.filePath(), QDir::Dirs | QDir::Filter::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while(diDirs.hasNext()) {
+            QSharedPointer<QDir> dp = QSharedPointer<QDir>::create(parentDir.relativeFilePath(diDirs.next()));
+            dirs.append(dp);
+        }
+
+        // All files
+        QDirIterator di(filename, QDir::Files, QDirIterator::Subdirectories);
+        while(di.hasNext()) {
+            if (isFileValid(di.next())) {
+                QSharedPointer<QFile> fp = QSharedPointer<QFile>::create(parentDir.relativeFilePath(di.next()));
+                files.append(fp);
+            }
+
+        }
+
+
+    } else if (newSelectedFileInfo.isFile()) {
+//        foreach (auto file, files) {
+//            if (file->fileName() == filename)
+//                return;
+//        }
+
+        if (isFileValid(filename)) {
+            QSharedPointer<QFile> fp = QSharedPointer<QFile>::create(newSelectedFileInfo.fileName());
+            files.append(fp);
+        }
+    }
+}
+
+bool SelectFilesDialog::isFileValid(const QString &filename)
+{
+    QSharedPointer<QFile> fp = QSharedPointer<QFile>::create(filename);
+
+    if (!fp->open(QIODevice::ReadOnly)) {
+        QMessageBox::critical(this, QApplication::applicationName(),
+                              tr("Unable to open file %1. Skipping.")
+                              .arg(filename));
+        return false;
+    }
     if (fp->isSequential()) {
         QMessageBox::critical(this, QApplication::applicationName(),
                               tr("%1 is not a regular file. Skipping.")
                               .arg(filename));
-        return;
+        return false;
     }
-    files.append(fp);
+    return true;
 }
 
 void SelectFilesDialog::updateFileStringListModel()
 {
     QStringList l;
-    foreach (QSharedPointer<QFile> file, files) {
-        l.append(QFileInfo(*file).fileName());
+    foreach (auto dir, dirs) {
+        l.append("DIR: " + dir->absolutePath());
+    }
+    foreach (auto file, files) {
+        l.append("FILE: " + file->fileName());
     }
     filesStringListModel.setStringList(l);
 }
 
 void SelectFilesDialog::addButtonClicked()
 {
-    QStringList filenames = QFileDialog::getOpenFileNames(nullptr, tr("Select File(s) to be Sent"));
+    QFileDialog *_f_dlg = new QFileDialog(this, tr("Select File(s) to be Sent"));
+    _f_dlg->setFileMode(QFileDialog::Directory);
+    _f_dlg->setOption(QFileDialog::DontUseNativeDialog, true);
+
+    // Try to select multiple files and directories at the same time in
+    // QFileDialog
+    QListView *l = _f_dlg->findChild<QListView *>("listView");
+    if (l) {
+        l->setSelectionMode(QAbstractItemView::MultiSelection);
+    }
+    QTreeView *t = _f_dlg->findChild<QTreeView *>();
+    if (t) {
+        t->setSelectionMode(QAbstractItemView::MultiSelection);
+    }
+    QStringList filenames;
+    int nMode = _f_dlg->exec();
+    if (nMode == DialogCode::Accepted) {
+        filenames = _f_dlg->selectedFiles();
+        delete _f_dlg;
+    } else if (nMode == DialogCode::Rejected) {
+        delete _f_dlg;
+        return;
+    }
     if (filenames.empty())
         return;
 
@@ -106,24 +193,43 @@ void SelectFilesDialog::addButtonClicked()
 void SelectFilesDialog::removeButtonClicked()
 {
     QModelIndexList indexes = ui->filesListView->selectionModel()->selectedIndexes();
-    QList<const QSharedPointer<QFile> *> removeList;
+    QList<const QSharedPointer<QFile> *> removeFileList;
+    QList<const QSharedPointer<QDir> *> removeDirList;
+    // dirs are at top
+    auto dirLen = dirs.length();
+    int indexOfDirs;
+    int indexOfFiles;
+
     foreach (const QModelIndex &i, indexes) {
-        removeList.append(&files.at(i.row()));
+        auto rawIdx = i.row();
+        if (rawIdx <= dirLen -1) {
+            // in the dir range
+            indexOfDirs = rawIdx;
+            removeDirList.append(&dirs.at(indexOfDirs));
+        } else {
+            // in the file range
+            indexOfFiles = rawIdx - dirLen;
+            removeFileList.append(&files.at(indexOfFiles));
+        }
     }
-    foreach (const QSharedPointer<QFile> *fp, removeList) {
-        files.removeOne(*fp);
+
+    foreach (auto f, removeFileList) {
+        files.removeOne(*f);
+    }
+    foreach (auto d, removeDirList) {
+        dirs.removeOne(*d);
     }
     updateFileStringListModel();
 }
 
 void SelectFilesDialog::accept()
 {
-    if (files.empty()) {
-        QMessageBox::warning(this, QApplication::applicationName(), tr("No file to be sent."));
+    if (files.empty() && dirs.empty()) {
+        QMessageBox::warning(this, QApplication::applicationName(), tr("No file or dirs to be sent."));
         return;
     }
 
-    SendToDialog *d = new SendToDialog(nullptr, files, discoveryService);
+    SendToDialog *d = new SendToDialog(nullptr, files, dirs, discoveryService);
     d->setAttribute(Qt::WA_DeleteOnClose);
     d->show();
 

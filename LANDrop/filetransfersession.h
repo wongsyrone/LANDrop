@@ -42,6 +42,7 @@ class FileTransferSession : public QObject {
 public:
     struct FileMetadata {
         QString filename;
+        QString type; // FILE or DIR
         quint64 size;
     };
     explicit FileTransferSession(QObject *parent, QTcpSocket *socket);

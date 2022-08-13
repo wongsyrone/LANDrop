@@ -42,7 +42,7 @@
 #include "settings.h"
 
 FileTransferReceiver::FileTransferReceiver(QObject *parent, QTcpSocket *socket) :
-    FileTransferSession(parent, socket), writingFile(nullptr), downloadPath(Settings::downloadPath()) {}
+    FileTransferSession(parent, socket), writingFile(nullptr), writingDir(nullptr), downloadPath(Settings::downloadPath()) {}
 
 void FileTransferReceiver::respond(bool accepted)
 {
@@ -107,6 +107,12 @@ void FileTransferReceiver::processReceivedData(const QByteArray &data)
                 return;
             }
 
+            QJsonValue type = o.value("type");
+            if (!type.isString()) {
+                emit ended();
+                return;
+            }
+
             QJsonValue size = o.value("size");
             if (!size.isDouble()) {
                 emit ended();
@@ -115,7 +121,7 @@ void FileTransferReceiver::processReceivedData(const QByteArray &data)
 
             quint64 sizeInt = static_cast<quint64>(size.toDouble());
             totalSize += sizeInt;
-            transferQ.append({filename.toString(), sizeInt});
+            transferQ.append({filename.toString(), type.toString(), sizeInt});
         }
 
         emit fileMetadataReady(transferQ, totalSize, deviceName.toString(),

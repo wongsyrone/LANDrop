@@ -33,6 +33,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QDir>
 #include <QFile>
 #include <QStringListModel>
 #include <QTcpSocket>
@@ -48,11 +49,13 @@ class SendToDialog : public QDialog {
     Q_OBJECT
 public:
     explicit SendToDialog(QWidget *parent, const QList<QSharedPointer<QFile>> &files,
+                          const QList<QSharedPointer<QDir>> &dirs,
                           DiscoveryService &discoveryService);
     ~SendToDialog();
 private:
     Ui::SendToDialog *ui;
     QList<QSharedPointer<QFile>> files;
+    QList<QSharedPointer<QDir>> dirs;
     QStringListModel hostsStringListModel;
     struct Endpoint {
         QHostAddress addr;

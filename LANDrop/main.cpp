@@ -44,8 +44,8 @@ int main(int argc, char *argv[])
 
     a.setOrganizationName("LANDrop");
     a.setOrganizationDomain("landrop.app");
-    a.setApplicationName("LANDrop");
-    a.setApplicationVersion("0.4.0");
+    a.setApplicationName("LANDrop-file-and-folders");
+    a.setApplicationVersion("1.0.0"); // incompatible protocol
 
     a.setQuitOnLastWindowClosed(false);
 
